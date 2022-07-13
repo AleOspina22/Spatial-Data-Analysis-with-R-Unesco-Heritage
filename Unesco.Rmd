@@ -1,0 +1,481 @@
+---
+title: "Spatial Data - Analysis about the concentration around the UNESCO sites in Switzerland"
+author: Alejandro Ospina
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document:
+  toc: yes
+toc_float: true
+toc_collapsed: true
+--- 
+
+
+```{r setup, include=T , message = F}
+library(sf)
+library(spData)
+library(rmapshaper)
+library(mapview)
+library(geosphere)
+library(magrittr)
+library(ggplot2)
+library(dplyr)
+library(leaflet)
+
+```
+
+
+```{r, eval = FALSE, include = FALSE}
+# clean working environment
+rm(list = ls())
+# Set working directory
+path <- dirname(rstudioapi::getActiveDocumentContext()$path)
+setwd(path)
+print(c("The project path is:", path))
+
+```
+
+
+
+################################################################################################################################################
+
+
+##### Phase 1  #####
+
+## DATA OF OFFICIAL WORLD HERITAGE WEBPAGE: https://whc.unesco.org/en/syndication
+
+```{r, eval=F}
+library("readxl")
+uwhc <- read_excel("/Users/alejandroospina/Desktop/1. USI/II SEMESTER/5. Text Analysis/Final Project/whsites.xls")  
+```
+
+```{r, eval=F}
+## st_as_sf is important to transform the object into a spatial objet, so I can use the mapview function. I can't use directly uwhc because otherwise I have a problem with the type of the data
+library(sf)
+uwhc_spatialData <- st_as_sf(uwhc, coords = c("longitude", "latitude"), crs = 4326) 
+```
+
+```{r, eval=F}
+mapview(uwhc_spatialData, cex = 1, legend = FALSE)
+```
+
+#################################################################
+
+## CONTINUITY OF PHASE 1
+
+
+## CVS file (STOPS of bus and train)
+## DATA TAKE FROM https://data.geo.admin.ch/ch.bav.haltestellen-oev/csv/2056/fr/ch.bav.haltestellen-oev.zip
+
+
+```{r, eval=F}
+
+library(sf)
+station <- st_read("/Users/alejandroospina/Desktop/1. USI/II SEMESTER/5. Text Analysis/Final Project/ch.bav.haltestellen-oev/PointExploitation.csv")
+station_spatialData <- st_as_sf(station, coords = c("E", "N"), crs = 2056) 
+mapview(station_spatialData, cex = 0.5, legend = FALSE)
+```
+
+
+
+```{r}
+## overlapping of the two maps 
+##blue point are the site of UNESCO and red ones are the stop of bus and train
+mapview(list(station_spatialData,uwhc_spatialData),col.regions=list("red","blue"),col=list("red","blue"))
+
+```
+
+
+############################################################################################################################################################
+
+
+#### PHASE 2  ####
+
+
+## NOW I WANT TO KNOW THE DISTANCE BETWEEN THE UWHS AND THE NEAREST STOP.
+## Has station_transformed and uwhc_spatialData are yet data frame, I don't need to change them. 
+
+
+```{r, eval = F, warning= FALSE}
+station_transformed = st_transform(station_spatialData, st_crs(uwhc_spatialData))
+```
+
+
+```{r, eval = F, warning= FALSE}
+# finding for each UNESCO site the index of its closest station (geodesic distance)
+idx <- st_nearest_feature(uwhc_spatialData,station_transformed)
+```
+
+
+```{r, eval = F, warning= FALSE}
+# creating a new column in the uwhc_spatialData dataset with the name of the closest station
+uwhc_spatialData$closest_station <- station_transformed$station[idx]
+```
+
+```{r}
+# calculating the distance between them
+uwhc_spatialData$distance_to_nearestStop <- st_distance(uwhc_spatialData, station_transformed[idx,], by_element = TRUE)
+tableUWHC <- uwhc_spatialData %>% select(name_en, distance_to_nearestStop)
+head(tableUWHC)
+```
+
+
+## which is the UNESCO site with the closest station?
+
+```{r}
+## result in meter
+min_distance <- min(uwhc_spatialData$distance_to_storage)
+str(min_distance)
+```
+
+```{r}
+##which is the name of this site?
+site_minDistance <- uwhc_spatialData %>% filter(distance_to_storage==min_distance)
+head(site_minDistance$name_en)
+```
+
+
+
+
+## which is the UNESCO site with the farthest station?
+
+```{r}
+## result in meter
+
+max_distance <- max(uwhc_spatialData$distance_to_storage)
+str(max_distance)
+```
+
+```{r}
+##which is the name of this site?
+site_maxDistance <- uwhc_spatialData %>% filter(distance_to_storage==max_distance)
+head(site_maxDistance$name_en)
+```
+
+############################################################################################################################################################
+
+
+#### Phase 3 #####
+
+
+## Now that I know which are the distance between between the UNESCO site (saved in the variable uwhc_spatialData$distance_to_storage) and the more nearest stop (bus, train, etc) I can use this data as a radius to know the concentration of restaurant around the closest area of the different site.
+
+## The idea of this is to be able to identify whether the fact that a UNESCO site is a reason why there are more restaurants around the attraction than other tourist sites that are not part of UNESCO. 
+## According to this official UNESCO website https://whc.unesco.org/en/statesparties/ch, there are two sites that are on the waiting list for Switzerland to become part of UNESCO.
+## From this page I take the name for the forest list in CH https://whc.unesco.org/en/list/1133 and the geolocation from  https://whc.unesco.org/fr/list/1133/multiple=1&unique_number=2152
+
+
+
+## I import the data of the site that are in process to be UNESCO side (tentative List for Switzerland)
+
+```{r, eval=F}
+library("readxl")
+tentative_list <- read_excel("/Users/alejandroospina/Desktop/1. USI/II SEMESTER/5. Text Analysis/Final Project/tentative_list_UNESCO.xls")  
+```
+
+```{r, eval=F}
+## st_as_sf is important to transform the object into a spatial objet, so I can use the mapview function. I can't use directly tentative_list because otherwise I have a problem with the type of the data
+library(sf)
+tentativeList_spatialData <- st_as_sf(tentative_list, coords = c("longitude", "latitude"), crs = 4326) 
+```
+
+```{r, eval=F}
+mapview(tentativeList_spatialData, cex = 4, legend = FALSE)
+```
+
+
+
+## Now I will also see which are the stops neares for each site to use this distance as possible radius for search the restaurants in this area. 
+
+## transformation of 
+
+
+```{r}
+tentativeList_transformed = st_transform(tentativeList_spatialData, st_crs(station_transformed))
+```
+
+```{r, eval = F, warning= FALSE}
+# finding for each UNESCO site the index of its closest station (geodesic distance)
+idx_tentative <- st_nearest_feature(tentativeList_transformed,station_transformed)
+```
+
+
+```{r, eval = F, warning= FALSE}
+# creating a new column in the tentativeList_transformed dataset with the name of the closest station
+tentativeList_transformed$closest_station <- station_transformed$station[idx_tentative]
+```
+
+```{r}
+# calculating the distance between them
+tentativeList_transformed$distance_to_storage <- st_distance(tentativeList_transformed, station_transformed[idx_tentative,], by_element = TRUE)
+tableTentative<-tentativeList_transformed %>% select(name_en,distance_to_storage)
+head(tableTentative)
+```
+
+
+############################################################################################################################################################
+
+
+
+##### Phase 4 #####
+
+
+
+## Now I have to import the location of the restaurants in Switzerland from OpenSourceStreet to after check:
+## - concentration of restaurants around the UNESCO sites
+## - concentration of resurants around the tentative sites 
+
+## After that, I can check if the UNESCO certification could be a motivation not only to have more visits, but also to have more concentration of restaurants thanks to the unesco declaration for this tourist site 
+
+
+
+## Retrieving geographic data: dedicated packages
+
+I will now retrieve all restaurants in for the Cantons that I'm interested in (bounding box = `"Switzerland"`) from OpenStreetMap. For that, I will use the `osmdata` package.
+
+
+## As I can save all the restaurants of CH due to the amount of data, I have to save it only for the Cantons where I found the sites (UNESCO and in Tentative List)
+
+
+## Restaurants in Ticino 
+```{r, eval=F}
+library(osmdata)
+
+dir.create("/Users/alejandroospina/Desktop/1. USI/II SEMESTER/5. Text Analysis/Final Project/osm", recursive = TRUE) 
+
+restaurants_Ticino = getbb( "Ticino,Switzerland") %>%
+  opq() %>% 
+    add_osm_feature(key = "amenity", value = "restaurant") %>% 
+      osmdata_sf()
+save("restaurants_Ticino", file = "/Users/alejandroospina/Desktop/1. USI/II SEMESTER/5. Text Analysis/Final Project/osm/restaurants_Ticino.RData")
+```
+```{r}
+library(leaflet)
+load("/Users/alejandroospina/Desktop/1. USI/II SEMESTER/5. Text Analysis/Final Project/osm/restaurants_Ticino.RData")
+# points corresponds to the nodes, the lower-level of the three hierarchical levels of OSM data (nodes, ways and relations).
+# A multilinestring, for example, is composed of multiple lines, and each line is composed of multiple points.
+# Plotting points will plot all objects
+
+restaurants_Ticino$osm_points %>% leaflet() %>% addTiles() %>% addCircles()
+
+```
+
+
+## Restaurants in Vaud
+```{r, eval=F}
+library(osmdata)
+
+dir.create("/Users/alejandroospina/Desktop/1. USI/II SEMESTER/5. Text Analysis/Final Project/osm", recursive = TRUE) 
+
+restaurants_Vaud = getbb( "Vaud, Switzerland") %>%
+  opq() %>% 
+    add_osm_feature(key = "amenity", value = "restaurant") %>% 
+      osmdata_sf()
+save("restaurants_Vaud", file = "/Users/alejandroospina/Desktop/1. USI/II SEMESTER/5. Text Analysis/Final Project/osm/restaurants_Vaud.RData")
+```
+
+```{r}
+library(leaflet)
+load("/Users/alejandroospina/Desktop/1. USI/II SEMESTER/5. Text Analysis/Final Project/osm/restaurants_Vaud.RData")
+
+restaurants_Vaud$osm_points %>% leaflet() %>% addTiles() %>% addCircles()
+```
+
+
+
+## Restaurants in San Gallo
+```{r, eval=F}
+library(osmdata)
+
+dir.create("/Users/alejandroospina/Desktop/1. USI/II SEMESTER/5. Text Analysis/Final Project/osm", recursive = TRUE) 
+
+restaurants_SanGallo = getbb( "Kanton Sankt Gallen, Switzerland") %>%
+  opq() %>% 
+    add_osm_feature(key = "amenity", value = "restaurant") %>% 
+      osmdata_sf()
+save("restaurants_SanGallo", file = "/Users/alejandroospina/Desktop/1. USI/II SEMESTER/5. Text Analysis/Final Project/osm/restaurants_SanGallo.RData")
+```
+
+```{r}
+library(leaflet)
+load("/Users/alejandroospina/Desktop/1. USI/II SEMESTER/5. Text Analysis/Final Project/osm/restaurants_SanGallo.RData")
+
+restaurants_SanGallo$osm_points %>% leaflet() %>% addTiles() %>% addCircles()
+```
+
+
+
+## Restaurants in Berna
+```{r, eval=F}
+library(osmdata)
+
+dir.create("/Users/alejandroospina/Desktop/1. USI/II SEMESTER/5. Text Analysis/Final Project/osm", recursive = TRUE) 
+
+restaurants_Berna = getbb( "Kanton Berna, Switzerland") %>%
+  opq() %>% 
+    add_osm_feature(key = "amenity", value = "restaurant") %>% 
+      osmdata_sf()
+save("restaurants_Berna", file = "/Users/alejandroospina/Desktop/1. USI/II SEMESTER/5. Text Analysis/Final Project/osm/restaurants_Berna.RData")
+```
+
+```{r}
+library(leaflet)
+load("/Users/alejandroospina/Desktop/1. USI/II SEMESTER/5. Text Analysis/Final Project/osm/restaurants_Berna.RData")
+
+restaurants_Berna$osm_points %>% leaflet() %>% addTiles() %>% addCircles()
+```
+
+## Restaurants in Grigioni
+```{r, eval=F}
+library(osmdata)
+
+dir.create("/Users/alejandroospina/Desktop/1. USI/II SEMESTER/5. Text Analysis/Final Project/osm", recursive = TRUE) 
+
+restaurants_Grigioni = getbb( "Grigioni, Switzerland") %>%
+  opq() %>% 
+    add_osm_feature(key = "amenity", value = "restaurant") %>% 
+      osmdata_sf()
+save("restaurants_Grigioni", file = "/Users/alejandroospina/Desktop/1. USI/II SEMESTER/5. Text Analysis/Final Project/osm/restaurants_Grigioni.RData")
+```
+
+```{r}
+library(leaflet)
+load("/Users/alejandroospina/Desktop/1. USI/II SEMESTER/5. Text Analysis/Final Project/osm/restaurants_Grigioni.RData")
+
+restaurants_Grigioni$osm_points %>% leaflet() %>% addTiles() %>% addCircles()
+```
+
+## Restaurants in Neuchatel
+```{r, eval=F}
+library(osmdata)
+
+dir.create("/Users/alejandroospina/Desktop/1. USI/II SEMESTER/5. Text Analysis/Final Project/osm", recursive = TRUE) 
+
+restaurants_Neuchatel = getbb( "Kanton Neuchatel, Switzerland") %>%
+  opq() %>% 
+    add_osm_feature(key = "amenity", value = "restaurant") %>% 
+      osmdata_sf()
+save("restaurants_Neuchatel", file = "/Users/alejandroospina/Desktop/1. USI/II SEMESTER/5. Text Analysis/Final Project/osm/restaurants_Neuchatel.RData")
+```
+
+```{r}
+library(leaflet)
+load("/Users/alejandroospina/Desktop/1. USI/II SEMESTER/5. Text Analysis/Final Project/osm/restaurants_Neuchatel.RData")
+
+restaurants_Neuchatel$osm_points %>% leaflet() %>% addTiles() %>% addCircles()
+```
+
+
+## Restaurants in Soletta
+```{r, eval=F}
+library(osmdata)
+
+dir.create("/Users/alejandroospina/Desktop/1. USI/II SEMESTER/5. Text Analysis/Final Project/osm", recursive = TRUE) 
+
+restaurants_Soletta = getbb( "Kanton Soletta, Switzerland") %>%
+  opq() %>% 
+    add_osm_feature(key = "amenity", value = "restaurant") %>% 
+      osmdata_sf()
+save("restaurants_Soletta", file = "/Users/alejandroospina/Desktop/1. USI/II SEMESTER/5. Text Analysis/Final Project/osm/restaurants_Soletta.RData")
+```
+
+```{r}
+library(leaflet)
+load("/Users/alejandroospina/Desktop/1. USI/II SEMESTER/5. Text Analysis/Final Project/osm/restaurants_Soletta.RData")
+
+restaurants_Soletta$osm_points %>% leaflet() %>% addTiles() %>% addCircles()
+```
+
+
+
+############################################################################################################################################################
+
+## Now, with the data collected, I will use the distance between the nearest transport stop and the site (UNESCO and not UNESCO) as the lightning bolt to find out what the concentration of restaurants is in that circular area around the site. 
+
+
+## First, I want to join all the data from the restaurants of each Canton that I selected before, after that I will use the function to find the restaurantes that are in a certain area near to the Unesco and non Unesco site
+```{r}
+
+rest_Ticino <- dplyr::select(restaurants_Ticino$osm_points, osm_id, geometry) %>% mutate(Cantone='Ticino')
+rest_Berna <- dplyr::select(restaurants_Berna$osm_points, osm_id, geometry) %>% mutate(Cantone='Berna')
+rest_Soletta <- dplyr::select(restaurants_Soletta$osm_points, osm_id, geometry) %>% mutate(Cantone='Soletta')
+rest_SanGallo <- dplyr::select(restaurants_SanGallo$osm_points, osm_id, geometry) %>% mutate(Cantone='San Gallo')
+rest_Grigioni <- dplyr::select(restaurants_Grigioni$osm_points, osm_id, geometry) %>% mutate(Cantone='Grigioni')
+rest_Neuchatel <- dplyr::select(restaurants_Neuchatel$osm_points, osm_id, geometry) %>% mutate(Cantone='Neuchatel')
+rest_Vaud <- dplyr::select(restaurants_Vaud$osm_points, osm_id, geometry) %>% mutate(Cantone='Vaud')
+
+all_restaurant <- rbind(rest_Ticino,rest_Berna,rest_Soletta,rest_SanGallo, rest_Grigioni,rest_Neuchatel,rest_Vaud)
+```
+
+```{r}
+restaurant_transformed = st_transform(all_restaurant,st_crs(uwhc_spatialData))
+```
+
+
+## overlapping of the site of UNESCO with the restaurants
+
+mapview()
+```{r}
+mapview(list(restaurant_transformed,uwhc_spatialData),col.regions=list("red","blue"),col=list("red","blue"))
+
+```
+
+
+############################################################################################################################################################
+
+##### Phase 5 #####
+
+## Find the restaurant in a certain area near to the sites
+
+
+```{r}
+##I can check if any points are the same st_intersects() as shown below. It is just a way to check the correctennes of the data
+
+any(st_touches(uwhc_spatialData,restaurant_transformed, sparse = FALSE))
+```
+
+```{r}
+concentration_of_restaurant<- st_is_within_distance(uwhc_spatialData,restaurant_transformed, dist= 300)
+summary(lengths(concentration_of_restaurant) > 0)
+
+```
+
+
+```{r}
+rest_neigbours <-  st_join(uwhc_spatialData,restaurant_transformed,
+                   join = st_is_within_distance, left = FALSE, dist = 300) %>% 
+  st_drop_geometry() %>% 
+  group_by(id_no, name_en) %>% 
+  summarise(no_neigbours = sum(n()))
+#> `summarise()` has grouped output by 'id_no', 'name_en'. 
+
+head(rest_neigbours)
+```
+
+############################################################################################################################################################
+
+
+## Now I will know the concentration of restaurantes for those sites that are in the Tentative List of UNESCO 
+
+
+```{r}
+concentration_of_restaurant_tentativeList<- st_is_within_distance(tentativeList_transformed,restaurant_transformed, dist= 300)
+summary(lengths(concentration_of_restaurant) > 0)
+
+```
+
+
+
+
+```{r}
+rest_neigbours_tentativeList <-  st_join(tentativeList_transformed,restaurant_transformed,
+                   join = st_is_within_distance, left = FALSE, dist = 300) %>% 
+  st_drop_geometry() %>% 
+  group_by(id_no, name_en) %>% 
+  summarise(no_neigbours = sum(n()))
+#> `summarise()` has grouped output by 'id_no', 'name_en'. 
+
+head(rest_neigbours)
+
+### I don't have result here because thre aren't restaurantes within 300 m from the sites
+```
+
